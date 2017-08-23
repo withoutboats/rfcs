@@ -107,7 +107,7 @@ believe the confusion has two causes, both addressed by this RFC.
 In the crate root, absolute and relative paths are the same today. In other
 languages this tends not to be the case. Instead, a common system is to place
 the root of the current package under some namespace; this RFC proposes to do
-just that, using the new `crate` namespace.
+just that, using the new `local` namespace.
 
 This will make absolute paths different from relative paths in every module,
 including the crate root, so that users do not get mislead into believing that
