@@ -15,7 +15,7 @@ This has a companion RFC to add a small futures API to libstd and libcore.
 [motivation]: #motivation
 
 High performance network services frequently use asynchronous IO, rather than
-blocking IO, becuase it can be easier to get optimal performance when handling
+blocking IO, because it can be easier to get optimal performance when handling
 many concurrent connections. Rust has seen some adoption in the network
 services space, and we wish to continue to enable those users - and to enable
 adoption by other users - by making it more ergonomic to write asynchronous
