@@ -25,7 +25,7 @@ The development of asynchronous IO in Rust has gone through multiple phases.
 Prior to 1.0, we experimented with having a green-threading runtime built into
 the language. However, this proved too opinionated - because it impacted every
 program written in Rust - and it was removed shortly before 1.0. After 1.0,
-asynchronous IO initially focused around the mio library, which provided an
+asynchronous IO initially focused around the mio library, which provided a
 cross-platform abstraction over the async IO primitives of Linux, Mac OS, and
 Windows. In mid-2016, the introduction of the futures crate had a major impact
 by providing a convenient, shared abstraction for asynchronous operations. The
@@ -119,6 +119,9 @@ fn main() {
 This will print both "Hello from main" statements before printing "Hello from
 async closure."
 
+`async` closures can be annotated with `move` to capture ownership of the
+variables they close over.
+
 ## `async` blocks
 
 You can create a future directly as an expression using an `async` block:
@@ -129,7 +132,7 @@ let my_future = async {
 };
 ```
 
-This form is equivalent to an immediately-invoked `async` closure.
+This form is almost equivalent to an immediately-invoked `async` closure.
 That is:
 
 ```rust
@@ -142,7 +145,9 @@ async { /* body */ }
 
 except that control-flow constructs like `return`, `break` and `continue` are
 not allowed within `body` (unless they appear within a fresh control-flow
-context like a closure or a loop).
+context like a closure or a loop). How the `?`-operator and early returns
+should work inside async blocks has not yet been established (see unresolved
+questions).
 
 As with `async` closures, `async` blocks can be annotated with `move` to capture
 ownership of the variables they close over.
@@ -164,7 +169,7 @@ yielding control of the function when it returns `Poll::Pending` and
 eventually evaluating to the item value when it returns `Poll::Ready`.
 
 `await!` can only be used inside of an async function, closure, or block.
-Using outside of that context is an error.
+Using it outside of that context is an error.
 
 (`await!` is a compiler built-in to leave space for deciding its exact syntax
 later. See more information in the unresolved questions section.)
@@ -193,8 +198,8 @@ state, which contains all of the arguments to this function.
 The anonymous return type implements `Future`, with the return type as its
 `Item`. Polling it advances the state of the function, returning `Pending`
 when it hits an `await` point, and `Ready` with the item when it hits a
-`return` point. Any attempt to poll it after it has already returned Ready once
-will panic.
+`return` point. Any attempt to poll it after it has already returned `Ready`
+once will panic.
 
 The anonymous return type has a negative impl for the `Unpin` trait - that is
 `impl !Unpin`. This is because the future could have internal references which
@@ -224,10 +229,10 @@ Future<Output = T>`.
 ### "Initialization" pattern
 
 One pattern that sometimes occurs is that a future has an "initialization" step
-which could ideally happen before the future starts being polled. Because the
-async function does not begin evaluating until you poll it, and it captures the
-lifetimes of its arguments, this pattern cannot be expressed with a single
-`async fn`.
+which should be performed during its construction. This is useful when dealing
+with data conversion and temporary borrows. Because the async function does not
+begin evaluating until you poll it, and it captures the lifetimes of its
+arguments, this pattern cannot be expressed directly with an `async fn`.
 
 One option is to write a function that returns `impl Future` using a closure
 which is evaluated immediately:
@@ -238,7 +243,7 @@ fn foo<'a>(arg1: &'a str, arg2: &str) -> impl Future<Output = usize> + 'a {
     // do some initialization using arg2
 
     // closure which is evaluated immediately
-    move async {
+    async move {
          // asynchronous portion of the function
     }
 }
@@ -262,6 +267,19 @@ loop {
 This is not a literal expansion, because the `yield` concept cannot be
 expressed in the surface syntax within `async` functions. This is why `await!`
 is a compiler builtin instead of an actual macro.
+
+## The order of `async` and `move`
+
+Async closures and blocks can be annotated with `move` to capture ownership of
+the variables they close over. The order of the keywords is fixed to
+`async move`. Permitting only one ordering avoids confusion about whether it is
+significant for the meaning.
+
+```rust
+async move {
+    // body
+}
+```
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -464,11 +482,11 @@ As noted in the main text, `async` blocks and `async` closures are closely
 related, and are roughly inter-expressible:
 
 ```rust
-// equivalent
+// almost equivalent
 async { ... }
 (async || { ... })()
 
-// equivalent
+// almost equivalent
 async |..| { ... }
 |..| async { ... }
 ```
@@ -479,7 +497,7 @@ We could consider having only one of the two constructs. However:
   such closures are often useful for higher-order constructs like constructing a
   service.
 
-- There's a strong reason to have `async` blocks: the initialization pattern
+- There's a strong reason to have `async` blocks: The initialization pattern
   mentioned in the RFC text, and the fact that it provides a more
   direct/primitive way of constructing futures.
 
@@ -553,14 +571,14 @@ There are a couple of possible solutions:
 This is left as an unresolved question to find another solution or decide which
 of these is least bad.
 
-## `async for` and processing streams
+## `for await` and processing streams
 
 Another extension left out of the RFC for now is the ability to process streams
-using a for loop. One could imagine a construct like `async for`, which takes
+using a for loop. One could imagine a construct like `for await`, which takes
 an `IntoStream` instead of an `IntoIterator`:
 
 ```rust
-async for value in stream {
+for await value in stream {
     println!("{}", value);
 }
 ```
@@ -604,3 +622,33 @@ across yield points.
 We could also, with an annotation, typecheck an async function to confirm that it
 does not contain any references across yield points, allowing it to implement
 `Unpin`. The annotation to enable this is left unspecified for the time being.
+
+## `?`-operator and control-flow constructs in async blocks
+
+This RFC does not propose how the `?`-operator and control-flow constructs like
+`return`, `break` and `continue` should work inside async blocks.
+
+It was discussed that async blocks should act as a boundary for the
+`?`-operator. This would make them suitable for fallible IO:
+
+```rust
+let reader: AsyncRead = ...;
+async {
+    let foo = await!(reader.read_to_end())?;
+    Ok(foo.parse().unwrap_or(0))
+}: impl Future<Output = io::Result<u32>>
+```
+
+Also, it was discussed to allow the use of `break` to return early from
+an async block:
+
+```rust
+async {
+    if true { break "foo" }
+}
+```
+
+The use of the `break` keyword instead of `return` could be beneficial to
+indicate that it applies to the async block and not its surrounding function. On
+the other hand this would introduce a difference to closures and async closures
+which make use the `return` keyword.
