@@ -651,4 +651,4 @@ async {
 The use of the `break` keyword instead of `return` could be beneficial to
 indicate that it applies to the async block and not its surrounding function. On
 the other hand this would introduce a difference to closures and async closures
-which make use the `return` keyword.
+which make use of the `return` keyword.
