@@ -611,7 +611,7 @@ fn foo(mut x: i32) yield i32 {
 
 // Returns a stream of i32
 async fn foo(io: &AsyncRead) yield i32 {
-    async for line in io.lines() {
+    for await line in io.lines() {
         yield line.unwrap().parse().unwrap();
     }
 }
