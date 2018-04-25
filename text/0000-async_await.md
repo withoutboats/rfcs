@@ -196,7 +196,7 @@ state, which contains all of the arguments to this function.
 ### Trait bounds
 
 The anonymous return type implements `Future`, with the return type as its
-`Item`. Polling it advances the state of the function, returning `Pending`
+`Output`. Polling it advances the state of the function, returning `Pending`
 when it hits an `await` point, and `Ready` with the item when it hits a
 `return` point. Any attempt to poll it after it has already returned `Ready`
 once will panic.
