@@ -12,8 +12,8 @@ implement `Async`.
 This has a companion RFC to add a small async API to libstd and libcore.
 
 Note: `Async` was previously called `Future`. However, due to to the many
-subtle differeneces, it was decided to standardize it under a different,
-slightly shorter name.
+subtle differeneces that result from `Async` being pinning-aware, it was decided
+to standardize it under a different name.
 
 # Motivation
 [motivation]: #motivation
@@ -43,14 +43,15 @@ across await points was extremely unergonomic - requiring either `Arc`s or
 writing a `Future`, they still often led to messy sets of nested and chained
 callbacks.
 
-Fortunately, the future abstraction (sometimes also called "promises") is well
-suited to use with a syntactic sugar which has become common in many languages
-with async IO - the `async` and `await` keywords. In brief, an asynchronous
-function returns an `Async`, rather than evaluating immediately when it is
-called. Inside the function, other `Async` types can be awaited using an await
-expression, which causes them to yield control while the `Async` is being
-polled. From a user's perspective, they can use `async`/`await` as if it were
-synchronous code, and only need to annotate their functions and calls.
+Fortunately, the future abstraction (in some languages also called "promises",
+this RFC calls them `Async`s) is well suited to use with a syntactic sugar which
+has become common in many languages with async IO - the `async` and `await`
+keywords. In brief, the `async` keyword is used to define an asynchronous
+function that returns an `Async`, rather than evaluating immediately, when it is
+called. Inside the function, other `Async` types can be awaited using an `await`
+expression, which causes them to yield control while the `Async` is being polled.
+From a user's perspective, code that uses `async`/`await` feels very similar to
+synchronous code.
 
 `async`/`await` & `Async` can be a powerful abstraction for asynchronicity and
 concurrency in general, and likely has applications outside of the asynchronous
@@ -76,8 +77,8 @@ async fn function(argument: &str) -> usize {
 Async functions work differently from normal functions. When an async function
 is called, it does not enter the body immediately. Instead, it evaluates to an
 anonymous type which implements `Async`. As that `Async` is polled, the
-function is evaluated up to the next `await` or return point inside of it (see
-the await syntax section next).
+function is evaluated up to the next `await` or `return` point inside of it (see
+the `await` syntax section next).
 
 An async function is a kind of delayed computation - nothing in the body of the
 function actually runs until you begin polling the `Async` returned by the
@@ -89,9 +90,9 @@ async fn print_async() {
 }
 
 fn main() {
-     let my_async = print_async();
+     let op = print_async();
      println!("Hello from main");
-     futures::block_on(my_async);
+     futures::block_on(op);
 }
 ```
 
@@ -114,14 +115,14 @@ fn main() {
          println("Hello from async closure.");
     };
     println!("Hello from main");
-    let my_async = closure();
+    let op = closure();
     println!("Hello from main again");
-    futures::block_on(my_async);
+    futures::block_on(op);
 }
 ```
 
 This will print both "Hello from main" statements before printing "Hello from
-async closure."
+async closure".
 
 Async closures can be annotated with `move` to capture ownership of the
 variables they close over.
@@ -131,7 +132,7 @@ variables they close over.
 You can create an `Async` directly as an expression using an async block:
 
 ```rust
-let my_async = async {
+let op = async {
     println!("Hello from an async block");
 };
 ```
@@ -161,11 +162,11 @@ ownership of the variables they close over.
 A builtin called `await!` is added to the compiler. `await!` can be used to
 "pause" the computation of the `Async`, yielding control back to the caller.
 `await!` takes any expression which implements `IntoAsync`, and evaluates to a
-value of the item type that `future` has.
+value of the item type that `op` has.
 
 ```rust
-// my_async: impl Async<Output = usize>
-let n = await!(my_async);
+// op: impl Async<Output = usize>
+let n = await!(op);
 ```
 
 The expansion of await repeatedly calls `poll` on the `Async` it receives,
@@ -201,8 +202,8 @@ state, which contains all of the arguments to this function.
 
 The anonymous return type implements `Async`, with the return type as its
 `Output`. Polling it advances the state of the function, returning `Pending`
-when it hits an `await` point, and `Ready` with the item when it hits a
-`return` point. Any attempt to poll it after it has already returned `Ready`
+when it hits an await point, and `Ready` with the item when it hits a
+return point. Any attempt to poll it after it has already returned `Ready`
 once will panic.
 
 The anonymous return type has a negative impl for the `Unpin` trait - that is
@@ -258,10 +259,10 @@ fn foo<'a>(arg1: &'a str, arg2: &str) -> impl Async<Output = usize> + 'a {
 The `await!` builtin expands roughly to this:
 
 ```rust
-let mut my_async = IntoAsync::into_future($expression);
-let mut pin = unsafe { Pin::new_unchecked(&mut my_async) };
+let mut op = IntoAsync::into_async($expression);
+let mut pin = unsafe { Pin::new_unchecked(&mut op) };
 loop {
-    match Async::poll(Pin::borrow(&mut pin), &mut ctx) {
+    match Async::poll(Pin::borrow(&mut pin), &mut context) {
           Poll::Ready(item) => break item,
           Poll::Pending     => yield,
     }
@@ -296,11 +297,11 @@ significant addition mustn't be taken lightly, and only with strong motivation.
 
 We believe that an ergonomic asynchronous IO solution is essential to Rust's
 success as a language for writing high performance network services, one of our
-goals for 2018. Async & await syntax based on the Async trait is the most
+goals for 2018. Async & await syntax based on the `Async` trait is the most
 expedient & low risk path to achieving that goal in the near future.
 
 This RFC, along with its companion lib RFC, makes a much firmer commitment to
-Async & `async`/`await` than we have previously as a project. If we decide to
+`Async` & `async`/`await` than we have previously as a project. If we decide to
 reverse course after stabilizing these features, it will be quite costly.
 Adding an alternative mechanism for asynchronous programming would be more
 costly because this exists. However, given our experience with futures, we are
@@ -519,13 +520,13 @@ JavaScript, and Python.
 There are three paradigms for asynchronous programming which are dominant
 today:
 
-- Async and await notation.
+- `async` and `await` notation.
 - An implicit concurrent runtime, often called "green-threading," such as
   communicating sequential processes (e.g. Go) or an actor model (e.g. Erlang).
 - Monadic transformations on lazily evaluated code, such as do notation (e.g.
   Haskell).
 
-Async/await is the most compelling model for Rust because it interacts
+`async`/`await` is the most compelling model for Rust because it interacts
 favorably with ownership and borrowing (unlike systems based on monads) and it
 enables us to have an entirely library-based asynchronicity model (unlike
 green-threading).
@@ -557,20 +558,20 @@ However, because it introduces a space, it doesn't look like this is the
 precedence you would get:
 
 ```
-await my_async?
+await op?
 ```
 
 There are a couple of possible solutions:
 
 1. Require delimiters of some kind, maybe braces or parens or either, so that
-   it will look more like how you expect - `await { my_async }?` - this is
+   it will look more like how you expect - `await { op }?` - this is
    rather noisy.
 2. Define the precedence as the obvious, if inconvenient precedence, requiring
-   users to write `(await my_async)?` - this seems very surprising for users.
+   users to write `(await op)?` - this seems very surprising for users.
 3. Define the precedence as the inconvenient precedence - this seems equally
    surprising as the other precedence.
 4. Introduce a special syntax to handle the multiple applications, such as
-   `await? my_async` - this seems very unusual in its own way.
+   `await? op` - this seems very unusual in its own way.
 
 This is left as an unresolved question to find another solution or decide which
 of these is least bad.
