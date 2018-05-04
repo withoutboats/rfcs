@@ -365,9 +365,9 @@ return types other than `Task`. We do not have a compelling use case for this:
    methods in object-safe traits. This is a special case of supporting `impl
    Trait` in object-safe traits (probably by boxing the return type in the
    object case), a feature we want separately from `async fn`.
-3. It has been proposed that we support `async fn` which return streams.
+3. It has been proposed that we support `async fn` which return `Stream`s.
    However, this mean that the semantics of the internal function would differ
-   significantly between those which return futures and streams. As discussed
+   significantly between those which return `Future`s and `Stream`s. As discussed
    in the unresolved questions section, a solution based on generators and
    `async` generators seems more promising.
 
@@ -429,7 +429,7 @@ returns `()` would implement `Iterator`.
 
 The problem with this approach is that does not ergonomically handle `Stream`s,
 which need to yield `Poll<Option<T>>`. It's unclear how `await` inside of an
-`async` fn yielding something other than `()` (which would include streams)
+`async` fn yielding something other than `()` (which would include `Stream`s)
 would work.  For this reason, the "matrix" approach in which we have independent
 syntax for generator functions, `async` functions, and `async` generator
 functions, seems like a more promising approach.
@@ -573,11 +573,11 @@ There are a couple of possible solutions:
 This is left as an unresolved question to find another solution or decide which
 of these is least bad.
 
-## `for await` and processing streams
+## `for await` and processing `Stream`s
 
-Another extension left out of the RFC for now is the ability to process streams
-using a for loop. One could imagine a construct like `for await`, which takes
-an `IntoStream` instead of an `IntoIterator`:
+Another extension left out of the RFC for now is the ability to process
+`Stream`s using a for loop. One could imagine a construct like `for await`,
+which takes an `IntoStream` instead of an `IntoIterator`:
 
 ```rust
 for await value in stream {
@@ -592,9 +592,9 @@ small as possible).
 ## Generators and Streams
 
 In the future, we may also want to be able to define `async` functions that
-evaluate to streams, rather than evaluating to `Future`s. We propose to handle
+evaluate to `Stream`s, rather than evaluating to `Future`s. We propose to handle
 this use case by way of generators. Generators can evaluate to a kind of
-iterator, while `async` generators can evaluate to a kind of stream.
+iterator, while `async` generators can evaluate to a kind of `Stream`.
 
 For example (using syntax which could change);
 
@@ -607,7 +607,7 @@ fn foo(mut x: i32) yield i32 {
      }
 }
 
-// Returns a stream of i32
+// Returns a Stream of i32
 async fn foo(io: &AsyncRead) yield i32 {
     for await line in io.lines() {
         yield line.unwrap().parse().unwrap();
